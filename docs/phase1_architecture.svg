@@ -1,0 +1,82 @@
+<svg width="600" viewBox="0 0 680 580" xmlns="http://www.w3.org/2000/svg" role="img" style="max-width:100%;display:block;margin:0 auto">
+<title>Phase 1 system architecture</title>
+<desc>Three-layer structural diagram: RL layer, Interface layer, Simulation layer.</desc>
+
+<style>
+  text { font-family: sans-serif; }
+  .th { font-size: 14px; font-weight: 500; fill: #3C3489; }
+  .ts { font-size: 12px; fill: #534AB7; }
+  .th-teal { font-size: 14px; font-weight: 500; fill: #085041; }
+  .ts-teal { font-size: 12px; fill: #0F6E56; }
+  .th-coral { font-size: 14px; font-weight: 500; fill: #712B13; }
+  .ts-coral { font-size: 12px; fill: #993C1D; }
+  .container-purple { fill: #EEEDFE; stroke: #534AB7; }
+  .container-teal   { fill: #E1F5EE; stroke: #0F6E56; }
+  .container-coral  { fill: #FAECE7; stroke: #993C1D; }
+  .node-purple { fill: #CECBF6; stroke: #534AB7; }
+  .node-teal   { fill: #9FE1CB; stroke: #0F6E56; }
+  .node-coral  { fill: #F5C4B3; stroke: #993C1D; }
+  .arr { stroke: #888780; stroke-width: 1; fill: none; }
+  .label { font-size: 12px; fill: #5F5E5A; }
+</style>
+
+<defs>
+  <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+    <path d="M2 1L8 5L2 9" fill="none" stroke="#888780" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+  </marker>
+</defs>
+
+<!-- RL Layer -->
+<rect x="44" y="28" width="592" height="118" rx="16" stroke-width="0.5" class="container-purple"/>
+<text class="th" x="64" y="54" dominant-baseline="central">RL layer</text>
+<text class="ts" x="64" y="72" dominant-baseline="central">Training &amp; learning</text>
+<rect x="68" y="82" width="220" height="48" rx="8" stroke-width="1" class="node-purple"/>
+<text class="th" x="178" y="100" text-anchor="middle" dominant-baseline="central">Stable-Baselines3</text>
+<text class="ts" x="178" y="118" text-anchor="middle" dominant-baseline="central">PPO / SAC algorithm</text>
+<rect x="392" y="82" width="220" height="48" rx="8" stroke-width="1" class="node-purple"/>
+<text class="th" x="502" y="100" text-anchor="middle" dominant-baseline="central">train.py</text>
+<text class="ts" x="502" y="118" text-anchor="middle" dominant-baseline="central">Training loop · evaluation</text>
+<line x1="288" y1="106" x2="390" y2="106" class="arr" marker-end="url(#arrow)" marker-start="url(#arrow)"/>
+
+<!-- Flow labels RL -> Interface -->
+<text class="label" x="210" y="176" text-anchor="middle">action</text>
+<line x1="210" y1="182" x2="210" y2="206" class="arr" marker-end="url(#arrow)"/>
+<line x1="300" y1="206" x2="300" y2="182" class="arr" marker-end="url(#arrow)"/>
+<text class="label" x="300" y="176" text-anchor="middle">obs · reward</text>
+
+<!-- Interface Layer -->
+<rect x="44" y="210" width="592" height="128" rx="16" stroke-width="0.5" class="container-teal"/>
+<text class="th-teal" x="64" y="236" dominant-baseline="central">Interface layer</text>
+<text class="ts-teal" x="64" y="254" dominant-baseline="central">Glue between RL and sim</text>
+<rect x="68" y="264" width="252" height="58" rx="8" stroke-width="1" class="node-teal"/>
+<text class="th-teal" x="194" y="284" text-anchor="middle" dominant-baseline="central">ForkliftEnv</text>
+<text class="ts-teal" x="194" y="302" text-anchor="middle" dominant-baseline="central">gymnasium.Env subclass</text>
+<text class="ts-teal" x="194" y="316" text-anchor="middle" dominant-baseline="central">reset() · step() · reward</text>
+<rect x="360" y="264" width="252" height="58" rx="8" stroke-width="1" class="node-teal"/>
+<text class="th-teal" x="486" y="284" text-anchor="middle" dominant-baseline="central">ROS2 node</text>
+<text class="ts-teal" x="486" y="302" text-anchor="middle" dominant-baseline="central">publish / subscribe</text>
+<text class="ts-teal" x="486" y="316" text-anchor="middle" dominant-baseline="central">/cmd_vel · /scan · /odom</text>
+<line x1="320" y1="293" x2="358" y2="293" class="arr" marker-end="url(#arrow)" marker-start="url(#arrow)"/>
+
+<!-- Flow labels Interface -> Sim -->
+<text class="label" x="210" y="374" text-anchor="middle">/cmd_vel</text>
+<line x1="210" y1="380" x2="210" y2="404" class="arr" marker-end="url(#arrow)"/>
+<line x1="340" y1="404" x2="340" y2="380" class="arr" marker-end="url(#arrow)"/>
+<text class="label" x="340" y="374" text-anchor="middle">/scan · /odom</text>
+
+<!-- Simulation Layer -->
+<rect x="44" y="408" width="592" height="128" rx="16" stroke-width="0.5" class="container-coral"/>
+<text class="th-coral" x="64" y="434" dominant-baseline="central">Simulation layer</text>
+<text class="ts-coral" x="64" y="452" dominant-baseline="central">Physics &amp; robot model</text>
+<rect x="68" y="460" width="172" height="58" rx="8" stroke-width="1" class="node-coral"/>
+<text class="th-coral" x="154" y="480" text-anchor="middle" dominant-baseline="central">Gazebo world</text>
+<text class="ts-coral" x="154" y="498" text-anchor="middle" dominant-baseline="central">Warehouse · physics</text>
+<rect x="254" y="460" width="172" height="58" rx="8" stroke-width="1" class="node-coral"/>
+<text class="th-coral" x="340" y="480" text-anchor="middle" dominant-baseline="central">Forklift SDF</text>
+<text class="ts-coral" x="340" y="498" text-anchor="middle" dominant-baseline="central">Links · joints · inertia</text>
+<rect x="440" y="460" width="172" height="58" rx="8" stroke-width="1" class="node-coral"/>
+<text class="th-coral" x="526" y="480" text-anchor="middle" dominant-baseline="central">Sensors</text>
+<text class="ts-coral" x="526" y="498" text-anchor="middle" dominant-baseline="central">LiDAR · odometry</text>
+<line x1="240" y1="489" x2="252" y2="489" class="arr" marker-end="url(#arrow)"/>
+<line x1="426" y1="489" x2="438" y2="489" class="arr" marker-end="url(#arrow)"/>
+</svg>
