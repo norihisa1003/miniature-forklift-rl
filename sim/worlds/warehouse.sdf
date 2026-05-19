@@ -27,7 +27,7 @@
       <direction>-0.5 0.1 -0.9</direction>
     </light>
 
-    <!-- ── Floor (6m x 6m, slightly larger than the walled area) ── -->
+    <!-- ── Floor (6m x 6m) ── -->
     <model name="floor">
       <static>true</static>
       <link name="floor_link">
@@ -54,11 +54,7 @@
       </link>
     </model>
 
-    <!-- ── Walls (5m x 5m enclosure, 0.5m tall, 0.1m thick) ──
-         Coordinate system: X = forward, Y = left, Z = up
-         North wall: x=+2.5, South wall: x=-2.5
-         East wall:  y=-2.5, West wall:  y=+2.5
-    -->
+    <!-- ── Walls (5m x 5m enclosure, 0.5m tall, 0.1m thick) ── -->
 
     <!-- North wall -->
     <model name="wall_north">
@@ -132,11 +128,7 @@
       </link>
     </model>
 
-    <!-- ── Goal marker (green cylinder, collision-free visual only) ──
-         Placed at (2.0, 0.0): near the north wall, center of the room.
-         The RL environment will use this position as the target coordinate.
-         No collision so the forklift can drive over it.
-    -->
+    <!-- ── Goal marker (visual only, no collision) ── -->
     <model name="goal_marker">
       <static>true</static>
       <pose>2.0 0.0 0.01 0 0 0</pose>
@@ -150,14 +142,13 @@
             <diffuse>0.0 0.8 0.0 0.8</diffuse>
           </material>
         </visual>
-        <!-- No <collision> block: the marker is visual-only -->
       </link>
     </model>
 
     <!-- ── Forklift (spawned at center, facing north) ── -->
     <include>
       <uri>model://forklift</uri>
-      <pose>0 0 0.13 0 0 0</pose>
+      <pose>0 0 0.13 0 0 3.14159</pose>
     </include>
 
   </world>

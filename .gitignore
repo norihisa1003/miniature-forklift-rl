@@ -216,3 +216,9 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Trained models (large binary files)
+training/models/
+
+# TensorBoard logs (regenerated during training)
+training/logs/
