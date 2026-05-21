@@ -18,7 +18,7 @@ env      = Monitor(ForkliftEnv(), filename=os.path.join(LOG_DIR, "train"))
 eval_env = Monitor(ForkliftEnv(), filename=os.path.join(LOG_DIR, "eval"))
 
 stop_callback = StopTrainingOnRewardThreshold(
-    reward_threshold=80.0, verbose=1
+    reward_threshold=60.0, verbose=1
 )
 eval_callback = EvalCallback(
     eval_env,

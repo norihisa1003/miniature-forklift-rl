@@ -12,8 +12,6 @@ from rclpy.executors import SingleThreadedExecutor
 from geometry_msgs.msg import Twist
 from nav_msgs.msg import Odometry
 
-
-
 # ---------------------------------------------------------------------------
 # Global ROS2 executor: shared across all ForkliftEnv instances
 # ---------------------------------------------------------------------------
@@ -146,8 +144,8 @@ class ForkliftEnv(gymnasium.Env):
         + 10 * (prev_dist - curr_dist)  (distance shaping)
     """
 
-    GOAL_X: float = 2.0
-    GOAL_Y: float = 0.0
+    GOAL_RANGE: float = 2.0       # goal sampling range: [-2.0, 2.0]
+    GOAL_MIN_DIST: float = 0.5    # minimum distance from spawn (origin)
     GOAL_THRESHOLD: float = 0.3
     WALL_LIMIT: float = 2.4
     MAX_STEPS: int = 500
@@ -157,7 +155,9 @@ class ForkliftEnv(gymnasium.Env):
         (-0.3,  0.0),  # 1: backward
         ( 0.0,  0.5),  # 2: turn left
         ( 0.0, -0.5),  # 3: turn right
-        ( 0.0,  0.0),  # 4: stop
+        ( 0.3,  0.5),  # 4: forward + turn left
+        ( 0.3, -0.5),  # 5: forward + turn right
+        ( 0.0,  0.0),  # 6: stop
     ]
 
     # Instance counter for unique node names
@@ -166,15 +166,17 @@ class ForkliftEnv(gymnasium.Env):
     def __init__(self):
         super().__init__()
 
-        obs_low  = np.array([-3.0, -3.0, -math.pi, -3.0, -3.0], dtype=np.float32)
-        obs_high = np.array([ 3.0,  3.0,  math.pi,  3.0,  3.0], dtype=np.float32)
+        obs_low  = np.array([-3.0, -3.0, -math.pi, -3.0, -3.0, 0.0, -math.pi], dtype=np.float32)
+        obs_high = np.array([ 3.0,  3.0,  math.pi,  3.0,  3.0, 6.0,  math.pi], dtype=np.float32)
         self.observation_space = gymnasium.spaces.Box(
             low=obs_low, high=obs_high, dtype=np.float32
         )
-        self.action_space = gymnasium.spaces.Discrete(5)
+        self.action_space = gymnasium.spaces.Discrete(7)
 
         self._step_count: int = 0
         self._prev_dist: float = 0.0
+        self.goal_x: float = 2.0      # initialized in reset()
+        self.goal_y: float = 0.0      # initialized in reset()
 
         # Give each instance a unique node name to avoid ROS2 name conflicts
         ForkliftEnv._instance_count += 1
@@ -199,6 +201,7 @@ class ForkliftEnv(gymnasium.Env):
         time.sleep(0.5)
 
         self._step_count = 0
+        self._sample_goal()            # ← calc distance after updating goal position
         self._prev_dist = self._distance_to_goal()
 
         return self._get_obs(), {}
@@ -227,13 +230,23 @@ class ForkliftEnv(gymnasium.Env):
 
     def _get_obs(self) -> np.ndarray:
         x, y, yaw = self._ros_node.get_pose()
+        dist = self._distance_to_goal()
+        
+        # angle from agent's heading to goal direction
+        goal_angle = math.atan2(self.goal_y - y, self.goal_x - x)
+        relative_angle = math.atan2(
+            math.sin(goal_angle - yaw),
+            math.cos(goal_angle - yaw)
+        )
+    
         return np.array(
-            [x, y, yaw, self.GOAL_X, self.GOAL_Y], dtype=np.float32
+            [x, y, yaw, self.goal_x, self.goal_y, dist, relative_angle],
+            dtype=np.float32
         )
 
     def _distance_to_goal(self) -> float:
         x, y, _ = self._ros_node.get_pose()
-        return math.hypot(self.GOAL_X - x, self.GOAL_Y - y)
+        return math.hypot(self.goal_x - x, self.goal_y - y)
 
     def _compute_reward(self, curr_dist: float) -> tuple[float, bool]:
         if curr_dist < self.GOAL_THRESHOLD:
@@ -241,7 +254,22 @@ class ForkliftEnv(gymnasium.Env):
 
         x, y, _ = self._ros_node.get_pose()
         if abs(x) > self.WALL_LIMIT or abs(y) > self.WALL_LIMIT:
-            return -50.0, True
+            return -100.0, True
 
-        reward = 10.0 * (self._prev_dist - curr_dist) - 0.1
-        return reward, False
+        shaping = 10.0 * (self._prev_dist - curr_dist)
+        return shaping - 0.1, False
+    
+    def _sample_goal(self) -> None:
+        """Sample a random goal position that is not too close to the spawn point.
+
+        The forklift spawns near the origin, so goals within GOAL_MIN_DIST
+        would be trivially reachable and provide no learning signal.
+        """
+        rng = self.np_random  # set by super().reset(seed=seed) — do not use random.random()
+        while True:
+            x = rng.uniform(-self.GOAL_RANGE, self.GOAL_RANGE)
+            y = rng.uniform(-self.GOAL_RANGE, self.GOAL_RANGE)
+            if math.hypot(x, y) >= self.GOAL_MIN_DIST:
+                self.goal_x = x
+                self.goal_y = y
+                break
