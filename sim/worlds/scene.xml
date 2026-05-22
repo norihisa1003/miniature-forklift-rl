@@ -1,0 +1,139 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Scene XML: Forklift + Pallet combined for Phase 2a visual check.
+  Forklift starts at origin facing +X.
+  Pallet is 0.7m ahead (close enough to see alignment).
+-->
+<mujoco model="forklift_pallet_scene">
+
+  <option timestep="0.002" gravity="0 0 -9.81" integrator="RK4" cone="elliptic"/>
+
+  <default>
+    <geom condim="3" friction="0.8 0.01 0.01"
+          solref="0.02 1" solimp="0.9 0.95 0.001"/>
+    <joint damping="0.5" armature="0.01"/>
+  </default>
+
+  <asset>
+    <texture name="floor_tex" type="2d" builtin="checker"
+             rgb1="0.6 0.6 0.6" rgb2="0.4 0.4 0.4" width="512" height="512"/>
+    <material name="floor_mat"  texture="floor_tex" texrepeat="4 4" reflectance="0.1"/>
+    <material name="body_mat"   rgba="0.9 0.7 0.0 1"/>
+    <material name="wheel_mat"  rgba="0.2 0.2 0.2 1"/>
+    <material name="fork_mat"   rgba="0.5 0.5 0.6 1"/>
+    <material name="mast_mat"   rgba="0.3 0.3 0.3 1"/>
+    <material name="pallet_mat" rgba="0.6 0.4 0.2 1"/>
+  </asset>
+
+  <worldbody>
+
+    <geom name="floor" type="plane" size="5 5 0.1"
+          material="floor_mat" condim="3" friction="0.8 0.01 0.01"
+          solref="0.02 1" solimp="0.9 0.95 0.001"/>
+
+    <!-- ── Forklift ── -->
+    <body name="base_link" pos="0 0 0.13">
+      <freejoint name="root"/>
+      <geom name="base_geom" type="box" size="0.20 0.125 0.06"
+            material="body_mat" mass="5.0"/>
+      <geom name="counterweight_geom" type="box" size="0.08 0.10 0.05"
+            pos="-0.16 0 0.01" material="mast_mat" mass="4.0"/>
+
+      <body name="left_wheel_body" pos="0.06 0.175 -0.07">
+        <joint name="left_wheel_joint" type="hinge" axis="0 1 0"
+               damping="0.05" armature="0.005"/>
+        <geom name="left_wheel_geom" type="cylinder"
+              fromto="0 -0.02 0  0 0.02 0" size="0.06"
+              material="wheel_mat" mass="0.5"
+              friction="1.0 0.005 0.0001"
+              solref="0.01 1" solimp="0.95 0.99 0.001"/>
+      </body>
+
+      <body name="right_wheel_body" pos="0.06 -0.175 -0.07">
+        <joint name="right_wheel_joint" type="hinge" axis="0 1 0"
+               damping="0.05" armature="0.005"/>
+        <geom name="right_wheel_geom" type="cylinder"
+              fromto="0 -0.02 0  0 0.02 0" size="0.06"
+              material="wheel_mat" mass="0.5"
+              friction="1.0 0.005 0.0001"
+              solref="0.01 1" solimp="0.95 0.99 0.001"/>
+      </body>
+
+      <body name="caster_body" pos="-0.15 0 -0.10">
+        <geom name="caster_geom" type="sphere" size="0.03"
+              material="wheel_mat" mass="0.1"
+              friction="0.001 0.001 0.001"
+              solref="0.02 1" solimp="0.9 0.95 0.001"/>
+      </body>
+
+      <body name="mast_body" pos="0.18 0 0.0">
+        <geom name="mast_geom_left" type="box" size="0.01 0.005 0.15"
+              pos="0 0.05 0.12" material="mast_mat" mass="0.3"
+              contype="0" conaffinity="0"/>
+        <geom name="mast_geom_right" type="box" size="0.01 0.005 0.15"
+              pos="0 -0.05 0.12" material="mast_mat" mass="0.3"
+              contype="0" conaffinity="0"/>
+        <body name="fork_carriage" pos="0 0 0.0">
+          <joint name="fork_lift_joint" type="slide" axis="0 0 1"
+                 range="0.0 0.20" damping="5.0" armature="0.01"/>
+            <geom name="left_fork_geom" type="box" size="0.16 0.015 0.008"
+                  pos="0.16 0.04 -0.117" material="fork_mat" mass="0.3"/>
+            <geom name="right_fork_geom" type="box" size="0.16 0.015 0.008"
+                  pos="0.16 -0.04 -0.117" material="fork_mat" mass="0.3"/>
+          <geom name="carriage_plate_geom" type="box" size="0.01 0.07 0.04"
+                pos="0.0 0 -0.08" material="mast_mat" mass="0.2"
+                contype="0" conaffinity="0"/>
+          <site name="fork_tip_site" pos="0.32 0 -0.117" size="0.01" rgba="1 0 0 0.5"/>
+            <site name="fork_root_site" pos="0.00 0 -0.117" size="0.01"
+                  rgba="1 0.5 0 0.5"/>
+        </body>
+      </body>
+    </body>
+
+    <!-- ── Pallet (0.5m ahead, forks can reach at X=0.38m) ── -->
+    <!--
+      Forklift fork tip is at X=0.38m from origin.
+      Pallet front face should be just beyond that: X = 0.38 + small gap.
+      Pallet body origin is at its center X, front face = origin - 0.15.
+      So: origin_x - 0.15 = 0.40 → origin_x = 0.55
+    -->
+    <body name="pallet" pos="0.65 0 0">
+      <geom name="bottom_deck" type="box" size="0.15 0.11 0.005"
+            pos="0 0 0.005" material="pallet_mat" mass="0.5"
+            contype="0" conaffinity="0"/>
+      <geom name="leg_left_outer" type="box" size="0.15 0.015 0.0125"
+            pos="0 0.080 0.0225" material="pallet_mat" mass="0.1"/>
+      <geom name="leg_inner" type="box" size="0.15 0.015 0.0125"
+            pos="0 0.0 0.0225" material="pallet_mat" mass="0.1"/>
+      <geom name="leg_right_outer" type="box" size="0.15 0.015 0.0125"
+            pos="0 -0.080 0.0225" material="pallet_mat" mass="0.1"/>
+      <geom name="top_deck" type="box" size="0.15 0.11 0.0075"
+            pos="0 0 0.0425" material="pallet_mat" mass="0.5"/>
+      <site name="left_slot_entry"  pos="-0.15  0.040 0.0225" size="0.008" rgba="0 1 0 0.8"/>
+      <site name="right_slot_entry" pos="-0.15 -0.040 0.0225" size="0.008" rgba="0 1 0 0.8"/>
+      <site name="slot_center"      pos="-0.15  0.000 0.0225" size="0.010" rgba="0 0 1 0.8"/>
+      <site name="slot_center_exit" pos="0.15 0.000 0.0225" size="0.010" rgba="1 0 1 0.8"/>
+    </body>
+
+  </worldbody>
+
+  <actuator>
+    <velocity name="left_wheel_vel"  joint="left_wheel_joint"
+              kv="5.0" ctrlrange="-5.0 5.0"/>
+    <velocity name="right_wheel_vel" joint="right_wheel_joint"
+              kv="5.0" ctrlrange="-5.0 5.0"/>
+    <velocity name="fork_lift_vel"   joint="fork_lift_joint"
+              kv="50.0" ctrlrange="-0.3 0.3"/>
+  </actuator>
+
+  <sensor>
+    <framepos  name="base_pos"  objtype="body" objname="base_link"/>
+    <framequat name="base_quat" objtype="body" objname="base_link"/>
+    <jointvel  name="left_wheel_vel_sensor"  joint="left_wheel_joint"/>
+    <jointvel  name="right_wheel_vel_sensor" joint="right_wheel_joint"/>
+    <jointpos  name="fork_height_sensor"     joint="fork_lift_joint"/>
+    <framepos  name="fork_tip_pos"  objtype="site" objname="fork_tip_site"/>
+    <framepos  name="slot_center_pos" objtype="site" objname="slot_center"/>
+  </sensor>
+
+</mujoco>

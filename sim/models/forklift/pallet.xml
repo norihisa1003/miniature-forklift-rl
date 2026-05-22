@@ -1,0 +1,154 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Pallet MJCF Model for Phase 2 RL Training (Pallet Insertion)
+  =============================================================
+  Designed to match the forklift fork dimensions:
+    Fork length    : 200mm
+    Fork width     : 30mm  (each prong)
+    Fork thickness : 16mm
+    Fork inner gap : 50mm  (between prongs)
+    Fork outer gap : 110mm (outside to outside)
+    Fork bottom Z  : ~5mm above ground
+
+  Pallet structure (viewed from front, forks approach from +X direction):
+
+        ┌─────────────────────────┐  ← top deck
+        │  [slot]      [slot]     │
+        └──┤      ├────┤      ├───┘
+           │      │    │      │      ← legs (forks slide under top deck)
+        ───┴──────┴────┴──────┴───  ← bottom deck (on ground)
+
+  Slot dimensions (with clearance):
+    Height : 25mm (fork thickness 16mm + 9mm clearance)
+    Width  : 40mm (fork width 30mm + 10mm clearance each side → 50mm, matches inner gap)
+
+  The pallet is a separate XML included into the scene XML.
+  It is placed in the world at a fixed position for Phase 2a training.
+-->
+<mujoco model="pallet">
+
+  <option timestep="0.002" gravity="0 0 -9.81" integrator="RK4" cone="elliptic"/>
+
+  <default>
+    <geom condim="3" friction="0.6 0.01 0.01"
+          solref="0.02 1" solimp="0.9 0.95 0.001"/>
+  </default>
+
+  <asset>
+    <texture name="floor_tex" type="2d" builtin="checker"
+             rgb1="0.6 0.6 0.6" rgb2="0.4 0.4 0.4" width="512" height="512"/>
+    <material name="floor_mat"  texture="floor_tex" texrepeat="4 4"/>
+    <material name="pallet_mat" rgba="0.6 0.4 0.2 1"/>  <!-- Wood brown -->
+    <material name="slot_mat"   rgba="0.1 0.1 0.1 1"/>  <!-- Dark (visual only) -->
+  </asset>
+
+  <worldbody>
+    <geom name="floor" type="plane" size="5 5 0.1" material="floor_mat"/>
+
+    <!--
+      Pallet root body.
+      pos="1.0 0 0": placed 1m in front of forklift origin for Phase 2a.
+      The forklift starts at origin facing +X, so pallet is directly ahead.
+    -->
+    <body name="pallet" pos="0.65 0 0">
+
+      <!--
+        Pallet is a static object (no joint = welded to world).
+        In Phase 2a the pallet does not move; the forklift must align to it.
+        Phase 2b will add a freejoint so the pallet can be lifted.
+      -->
+
+      <!--
+        === STRUCTURE OVERVIEW ===
+
+        Top deck: flat board on top of the legs.
+        Legs: 4 blocks that create the slot openings.
+        Bottom deck: flat board on the ground (connects the legs).
+
+        All positions are relative to pallet body origin,
+        which sits at ground level (Z=0).
+
+        Key measurements:
+          Slot height = 0.025m (25mm): fork 16mm + 9mm clearance
+          Slot center Z = bottom_deck_top + slot_height/2
+                        = 0.010 + 0.0125 = 0.0225m
+
+          Top deck bottom = slot_center_Z + slot_height/2
+                          = 0.0225 + 0.0125 = 0.035m
+          Top deck thickness = 0.015m (15mm)
+          Top deck center Z = 0.035 + 0.0075 = 0.0425m
+
+        Leg width along Y:
+          Left slot center Y  = +0.04 (matches left fork center)
+          Right slot center Y = -0.04 (matches right fork center)
+          Slot width = 0.05m (50mm): fork 30mm + 10mm clearance each side
+
+          Left outer leg : Y = +0.04 + 0.025 + leg_half = outer side
+          Inner leg      : Y between slots
+          Right outer leg: Y = -0.04 - 0.025 - leg_half = outer side
+
+          Leg Y positions (center):
+            left_outer  : +0.04 + 0.025 + 0.015 = +0.080
+            inner       :  0.0  (between the two slots)
+            right_outer : -0.080
+      -->
+
+      <!-- ── Bottom deck ── -->
+      <!--
+        Full-width base board lying on the ground.
+        size: X=0.15 (300mm deep), Y=0.11 (220mm wide), Z=0.005 (10mm thick)
+        pos Z: 0.005 (half-thickness, so bottom face sits at Z=0)
+      -->
+      <geom name="bottom_deck" type="box" size="0.15 0.11 0.005"
+        pos="0 0 0.005" material="pallet_mat" mass="0.5"/>
+
+      <!-- ── Legs (4 blocks creating 2 fork slots) ── -->
+      <!--
+        Each leg: size X=0.15 (full depth), Y=0.015 (30mm), Z=0.0125 (25mm = slot height)
+        Leg center Z = bottom_deck top + leg_half = 0.010 + 0.0125 = 0.0225m
+      -->
+
+      <!-- Left outer leg -->
+      <geom name="leg_left_outer" type="box" size="0.02 0.015 0.0125"
+        pos="-0.130 0.080 0.0225" material="pallet_mat" mass="0.1"/>
+
+      <!-- Inner leg (between the two slots) -->
+      <geom name="leg_inner" type="box" size="0.02 0.015 0.0125"
+        pos="-0.130 0.0 0.0225" material="pallet_mat" mass="0.1"/>
+
+      <!-- Right outer leg -->
+      <geom name="leg_right_outer" type="box" size="0.02 0.015 0.0125"
+        pos="-0.130 -0.080 0.0225" material="pallet_mat" mass="0.1"/>
+
+      <!-- ── Top deck ── -->
+      <!--
+        Sits on top of the legs.
+        Bottom face Z = 0.010 + 0.025 = 0.035m
+        Center Z = 0.035 + 0.0075 = 0.0425m
+      -->
+      <geom name="top_deck" type="box" size="0.15 0.11 0.0075"
+        pos="0 0 0.0425" material="pallet_mat" mass="0.5"/>
+
+      <!--
+        === SLOT ENTRY MARKERS (sites, no physics) ===
+        Used in forklift_mujoco_env.py to compute reward.
+
+        Left slot center:  Y=+0.040, Z=slot_center=0.0225
+        Right slot center: Y=-0.040, Z=0.0225
+
+        X position: front face of pallet = pallet_pos_x - 0.15 = -0.15 from body origin.
+        The forklift approaches from -X direction, so slot entry is at X=-0.15.
+      -->
+      <site name="left_slot_entry"  pos="-0.15  0.040 0.0225" size="0.008" rgba="0 1 0 0.8"/>
+        <site name="right_slot_entry" pos="-0.15 -0.040 0.0225" size="0.008" rgba="0 1 0 0.8"/>
+      <!--
+        Midpoint between the two slot entries — used as the single target point
+        in reward calculation (simpler than tracking both forks independently).
+      -->
+        <site name="slot_center"      pos="-0.15  0.000 0.0225" size="0.010" rgba="0 0 1 0.8"/>
+
+    </body>
+
+  </worldbody>
+
+</mujoco>

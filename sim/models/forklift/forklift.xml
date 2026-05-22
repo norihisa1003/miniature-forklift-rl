@@ -1,0 +1,147 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Forklift MJCF Model for Phase 2 RL Training (Pallet Insertion)
+  ================================================================
+  Converted from Gazebo SDF (Phase 1) and extended with fork/mast assembly.
+
+  Coordinate convention (MuJoCo default):
+    X = forward (direction the forklift faces)
+    Y = left
+    Z = up
+
+  Key dimensions (carried over from Phase 1 SDF):
+    Body      : 0.40 x 0.25 x 0.12 m
+    Drive wheel radius : 0.06 m  (Y = ±0.175 m from center, X = +0.06 forward of center)
+    Caster radius      : 0.03 m  (X = -0.15 m, rear)
+
+  New in Phase 2:
+    Mast      : vertical slide joint, fork assembly rides on it
+    Fork L/R  : two thin prongs extending forward in X, ground-level at joint=0
+    Fork range: 0.0 m (floor) to 0.20 m (raised)
+-->
+<mujoco model="forklift">
+
+  <option timestep="0.002" gravity="0 0 -9.81" integrator="RK4" cone="elliptic"/>
+
+  <default>
+    <geom condim="3" friction="0.8 0.01 0.01"
+          solref="0.02 1" solimp="0.9 0.95 0.001"/>
+    <joint damping="0.5" armature="0.01"/>
+  </default>
+
+  <asset>
+    <texture name="floor_tex" type="2d" builtin="checker"
+             rgb1="0.6 0.6 0.6" rgb2="0.4 0.4 0.4" width="512" height="512"/>
+    <material name="floor_mat" texture="floor_tex" texrepeat="4 4" reflectance="0.1"/>
+    <material name="body_mat"  rgba="0.9 0.7 0.0 1"/>
+    <material name="wheel_mat" rgba="0.2 0.2 0.2 1"/>
+    <material name="fork_mat"  rgba="0.5 0.5 0.6 1"/>
+    <material name="mast_mat"  rgba="0.3 0.3 0.3 1"/>
+  </asset>
+
+  <worldbody>
+
+    <geom name="floor" type="plane" size="5 5 0.1"
+          material="floor_mat" condim="3" friction="0.8 0.01 0.01"
+          solref="0.02 1" solimp="0.9 0.95 0.001"/>
+
+    <body name="base_link" pos="0 0 0.13" euler="0 0 0">
+      <freejoint name="root"/>
+
+      <!-- Main body: 0.40 x 0.25 x 0.12 m (half-extents) -->
+      <geom name="base_geom" type="box" size="0.20 0.125 0.06"
+            material="body_mat" mass="5.0"/>
+
+      <!-- Counterweight (rear): balances fork/mast weight -->
+      <geom name="counterweight_geom" type="box" size="0.08 0.10 0.05"
+            pos="-0.16 0 0.01" material="mast_mat" mass="4.0"/>
+
+      <!--
+        Drive wheels: X=+0.06 (forward of center) to place axle ahead of COM.
+        fromto defines cylinder axis explicitly along Y → no euler ambiguity.
+      -->
+      <body name="left_wheel_body" pos="0.06 0.175 -0.07">
+        <joint name="left_wheel_joint" type="hinge" axis="0 1 0"
+               damping="0.05" armature="0.005"/>
+        <geom name="left_wheel_geom" type="cylinder"
+              fromto="0 -0.02 0  0 0.02 0" size="0.06"
+              material="wheel_mat" mass="0.5"
+              friction="1.0 0.005 0.0001"
+              solref="0.01 1" solimp="0.95 0.99 0.001"/>
+      </body>
+
+      <body name="right_wheel_body" pos="0.06 -0.175 -0.07">
+        <joint name="right_wheel_joint" type="hinge" axis="0 1 0"
+               damping="0.05" armature="0.005"/>
+        <geom name="right_wheel_geom" type="cylinder"
+              fromto="0 -0.02 0  0 0.02 0" size="0.06"
+              material="wheel_mat" mass="0.5"
+              friction="1.0 0.005 0.0001"
+              solref="0.01 1" solimp="0.95 0.99 0.001"/>
+      </body>
+
+      <!-- Rear caster: passive support, near-zero friction -->
+      <body name="caster_body" pos="-0.15 0 -0.10">
+        <geom name="caster_geom" type="sphere" size="0.03"
+              material="wheel_mat" mass="0.1"
+              friction="0.001 0.001 0.001"
+              solref="0.02 1" solimp="0.9 0.95 0.001"/>
+      </body>
+
+      <!-- Mast (visual only, no collision) -->
+      <body name="mast_body" pos="0.18 0 0.0">
+        <geom name="mast_geom_left" type="box" size="0.01 0.005 0.15"
+              pos="0 0.05 0.12" material="mast_mat" mass="0.3"
+              contype="0" conaffinity="0"/>
+        <geom name="mast_geom_right" type="box" size="0.01 0.005 0.15"
+              pos="0 -0.05 0.12" material="mast_mat" mass="0.3"
+              contype="0" conaffinity="0"/>
+
+        <!-- Fork carriage: slides up/down on mast -->
+        <body name="fork_carriage" pos="0 0 0.0">
+          <joint name="fork_lift_joint" type="slide" axis="0 0 1"
+                 range="0.0 0.20" damping="5.0" armature="0.01"/>
+
+          <!--
+            Fork prongs: pos Z=-0.117 places fork bottom at ~5mm above ground.
+            Calculation: base_z(0.13) + mast_z(0) + carriage_z(0) - 0.117 - thickness(0.008) = 0.005m
+          -->
+          <geom name="left_fork_geom" type="box" size="0.10 0.015 0.008"
+                pos="0.10 0.04 -0.117" material="fork_mat" mass="0.3"/>
+          <geom name="right_fork_geom" type="box" size="0.10 0.015 0.008"
+                pos="0.10 -0.04 -0.117" material="fork_mat" mass="0.3"/>
+
+          <geom name="carriage_plate_geom" type="box" size="0.01 0.07 0.04"
+                pos="0.0 0 -0.08" material="mast_mat" mass="0.2"
+                contype="0" conaffinity="0"/>
+
+          <!-- Fork tip site: used for reward distance calculation in env -->
+          <site name="fork_tip_site" pos="0.20 0 -0.117" size="0.01"
+                rgba="1 0 0 0.5"/>
+
+        </body>
+      </body>
+
+    </body>
+
+  </worldbody>
+
+  <actuator>
+    <velocity name="left_wheel_vel"  joint="left_wheel_joint"
+              kv="5.0" ctrlrange="-5.0 5.0"/>
+    <velocity name="right_wheel_vel" joint="right_wheel_joint"
+              kv="5.0" ctrlrange="-5.0 5.0"/>
+    <velocity name="fork_lift_vel"   joint="fork_lift_joint"
+              kv="50.0" ctrlrange="-0.3 0.3"/>
+  </actuator>
+
+  <sensor>
+    <framepos  name="base_pos"  objtype="body" objname="base_link"/>
+    <framequat name="base_quat" objtype="body" objname="base_link"/>
+    <jointvel  name="left_wheel_vel_sensor"  joint="left_wheel_joint"/>
+    <jointvel  name="right_wheel_vel_sensor" joint="right_wheel_joint"/>
+    <jointpos  name="fork_height_sensor"     joint="fork_lift_joint"/>
+    <framepos  name="fork_tip_pos" objtype="site" objname="fork_tip_site"/>
+  </sensor>
+
+</mujoco>
