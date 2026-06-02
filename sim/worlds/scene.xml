@@ -122,8 +122,8 @@
               kv="5.0" ctrlrange="-5.0 5.0"/>
     <velocity name="right_wheel_vel" joint="right_wheel_joint"
               kv="5.0" ctrlrange="-5.0 5.0"/>
-    <velocity name="fork_lift_vel"   joint="fork_lift_joint"
-              kv="50.0" ctrlrange="-0.3 0.3"/>
+    <position name="fork_lift_vel" joint="fork_lift_joint"
+             kp="500.0" ctrlrange="0.0 0.20"/>
   </actuator>
 
   <sensor>
