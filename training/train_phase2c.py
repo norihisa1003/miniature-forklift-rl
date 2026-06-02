@@ -38,7 +38,7 @@ MODEL_SAVE_PATH = "models/phase2c_ppo"
 # Set to a model path to continue training from a checkpoint.
 # e.g. "models/phase2b_ppo/best_model"
 # Set to None to train from scratch.
-INITIAL_MODEL = "models/phase2b_ppo/best_model"
+INITIAL_MODEL = None
 
 # ── Environment ─────────────────────────────────────────────
 

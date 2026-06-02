@@ -162,7 +162,7 @@ class ForkliftMujocoEnv(gym.Env):
     def step(self, action):
         self.data.ctrl[0] = float(action[0]) * WHEEL_VEL_MAX
         self.data.ctrl[1] = float(action[1]) * WHEEL_VEL_MAX
-        self.data.ctrl[2] = float(action[2]) * FORK_VEL_MAX
+        self.data.ctrl[2] = FORK_INIT_HEIGHT
 
         for _ in range(STEPS_PER_ACTION):
             mujoco.mj_step(self.model, self.data)
@@ -232,8 +232,8 @@ class ForkliftMujocoEnv(gym.Env):
         self._prev_root_dy = root_dy
 
         # 2. Alignment improvement
-        reward += (self._prev_alignment_error - alignment_error) * 50.0
-        self._prev_alignment_error = alignment_error
+        # reward += (self._prev_alignment_error - alignment_error) * 50.0
+        # self._prev_alignment_error = alignment_error
 
         # 3a. Forward progress (small: encourages moving toward pallet)
         forward_progress = fork_tip[0] - self._prev_fork_tip_x
