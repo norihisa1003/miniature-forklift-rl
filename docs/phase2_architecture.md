@@ -58,7 +58,7 @@ train_phase2c.py
 |---|---|---|---|---|---|
 | 2a | Fixed (0.30m) | Fixed 0° | Fixed 0 | Fixed | 10/10 (100%) |
 | 2b | Random 0.20–0.50m | Random ±30° | Fixed 0 | Fixed | 10/10 (100%) |
-| 2c | Random 0.20–0.50m | Random ±30° | Random ±15cm | Fixed | In progress |
+| 2c | Random 0.20–0.50m | Random ±30° | Random ±15cm | Fixed | 10/10 (100%) |
 
 ---
 

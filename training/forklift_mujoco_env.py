@@ -237,7 +237,7 @@ class ForkliftMujocoEnv(gym.Env):
 
         # 3a. Forward progress (small: encourages moving toward pallet)
         forward_progress = fork_tip[0] - self._prev_fork_tip_x
-        reward += forward_progress * 50.0
+        reward += forward_progress * 10.0
         self._prev_fork_tip_x = fork_tip[0]
 
         # 3b. Insertion depth (large: reward for actually entering slot)
