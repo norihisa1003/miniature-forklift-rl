@@ -22,7 +22,10 @@ Outputs:
 
 from stable_baselines3 import PPO
 from stable_baselines3.common.env_util import make_vec_env
-from stable_baselines3.common.callbacks import EvalCallback
+from stable_baselines3.common.callbacks import (
+    EvalCallback,
+    StopTrainingOnNoModelImprovement
+)
 from forklift_mujoco_env import ForkliftMujocoEnv
 import os
 
@@ -65,6 +68,13 @@ else:
 # ── Callback ─────────────────────────────────────────────────
 
 os.makedirs(MODEL_SAVE_PATH, exist_ok=True)
+
+stop_callback = StopTrainingOnNoModelImprovement(
+    max_no_improvement_evals=20,  # max_no_improvement_evals=10,  # for quick testing
+    min_evals=30,                  # require at least N evals before stopping (to allow some training time before early stopping can occur)
+    verbose=1
+)
+
 eval_callback = EvalCallback(
     eval_env,
     best_model_save_path=MODEL_SAVE_PATH,
@@ -72,6 +82,7 @@ eval_callback = EvalCallback(
     eval_freq=10_000 // N_ENVS,
     n_eval_episodes=10,
     deterministic=True,
+    callback_after_eval=stop_callback,
     verbose=1,
 )
 

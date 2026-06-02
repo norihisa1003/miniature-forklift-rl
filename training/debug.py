@@ -50,7 +50,7 @@ def debug(model_path: Path, n_episodes: int):
         slot      = env.data.site_xpos[env._slot_entry_site_id].copy()
         fork_tip_z = env.data.site_xpos[env._fork_tip_site_id][2]
         slot_z     = env.data.site_xpos[env._slot_entry_site_id][2]
-        
+
         print(f"Ep{ep+1} start:")
         print(f"  fork_tip  = ({fork_tip[0]:.3f}, {fork_tip[1]:.3f})")
         print(f"  fork_root = ({fork_root[0]:.3f}, {fork_root[1]:.3f})")
@@ -65,16 +65,19 @@ def debug(model_path: Path, n_episodes: int):
 
             if step % LOG_INTERVAL == 0:
                 fork_tip = env.data.site_xpos[env._fork_tip_site_id].copy()
+                slot_entry = env.data.site_xpos[env._slot_entry_site_id].copy()
                 print(f"  step{step:3d}: "
                     f"fork_x={fork_tip[0]:.3f} "
                     f"root_dy={info['root_dy']:.3f}m "
+                    f"fork_z={fork_tip[2]:.4f} "
+                    f"slot_z={slot_entry[2]:.4f} "
                     f"insertion={info['insertion_depth']:.3f}m "
                     f"align={info['alignment_error']:.3f}rad "
                     f"ncon={env.data.ncon}")
             
             # debug.pyのstep100あたりに追加
-            if step == 100:
-                print(f"  action: lw={action[0]:.3f} rw={action[1]:.3f} fork={action[2]:.3f}")
+            if 100 <= step <= 110:
+                print(f"    action: lw={action[0]:.3f} rw={action[1]:.3f} fork={action[2]:.3f}")
 
             if terminated or truncated:
                 result = "SUCCESS" if info.get("success") else \
