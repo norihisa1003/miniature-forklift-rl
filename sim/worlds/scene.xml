@@ -1,8 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Scene XML: Forklift + Pallet combined for Phase 2a visual check.
-  Forklift starts at origin facing +X.
-  Pallet is 0.7m ahead (close enough to see alignment).
+  Scene XML: Forklift + Pallet combined for Phase 2d.
+  Changes from Phase 2c:
+    - Platform body added under pallet (no joint, static).
+      reset() rewrites model.geom_size[platform_geom][2] to randomize height.
+      Prevents fork from sliding under pallet at wrong height.
+    - Pallet is now a child of platform (no joint).
+      reset() rewrites model.body_pos[pallet][2] = platform_height.
+    - Actuator renamed: fork_lift_vel -> fork_lift_pos (position type, was already position in 2c)
 -->
 <mujoco model="forklift_pallet_scene">
 
@@ -75,44 +80,55 @@
               contype="0" conaffinity="0"/>
         <body name="fork_carriage" pos="0 0 0.0">
           <joint name="fork_lift_joint" type="slide" axis="0 0 1"
-                 range="0.0 0.20" damping="5.0" armature="0.01"/>
-            <geom name="left_fork_geom" type="box" size="0.16 0.015 0.008"
-                  pos="0.16 0.04 -0.117" material="fork_mat" mass="0.3"/>
-            <geom name="right_fork_geom" type="box" size="0.16 0.015 0.008"
-                  pos="0.16 -0.04 -0.117" material="fork_mat" mass="0.3"/>
+                 range="0.0 0.20" damping="50.0" armature="0.01"/>
+          <geom name="left_fork_geom" type="box" size="0.16 0.015 0.008"
+                pos="0.16 0.04 -0.117" material="fork_mat" mass="0.3"/>
+          <geom name="right_fork_geom" type="box" size="0.16 0.015 0.008"
+                pos="0.16 -0.04 -0.117" material="fork_mat" mass="0.3"/>
           <geom name="carriage_plate_geom" type="box" size="0.01 0.07 0.04"
                 pos="0.0 0 -0.08" material="mast_mat" mass="0.2"
                 contype="0" conaffinity="0"/>
-          <site name="fork_tip_site" pos="0.32 0 -0.117" size="0.01" rgba="1 0 0 0.5"/>
-            <site name="fork_root_site" pos="0.00 0 -0.117" size="0.01"
-                  rgba="1 0.5 0 0.5"/>
+          <site name="fork_tip_site"  pos="0.32 0 -0.117" size="0.01" rgba="1 0 0 0.5"/>
+          <site name="fork_root_site" pos="0.00 0 -0.117" size="0.01" rgba="1 0.5 0 0.5"/>
         </body>
       </body>
     </body>
 
-    <!-- ── Pallet (0.5m ahead, forks can reach at X=0.38m) ── -->
+    <!-- ── Platform ── -->
     <!--
-      Forklift fork tip is at X=0.38m from origin.
-      Pallet front face should be just beyond that: X = 0.38 + small gap.
-      Pallet body origin is at its center X, front face = origin - 0.15.
-      So: origin_x - 0.15 = 0.40 → origin_x = 0.55
+      Static body (no joint) that sits on the floor and supports the pallet.
+      Height is randomized each episode via model.geom_size / model.geom_pos in reset().
+      The front face blocks the fork if fork height is wrong.
+
+      X size: half_x=0.15 → front face X = 0.65 - 0.15 = 0.50 (same as slot entry)
+              This matches real-world stacking where platform X == pallet X.
+      Z size: half_z randomized in reset() → top face Z = platform_height
+    -->
+    <body name="platform" pos="0.65 0 0">
+      <geom name="platform_geom" type="box" size="0.15 0.11 0.005"
+            pos="0 0 0.005" material="mast_mat" mass="0.0"/>
+    </body>
+
+    <!-- ── Pallet ── -->
+    <!--
+      Separated from platform (sibling body, not child).
+      body_pos[2] is set to platform_height in reset() so pallet sits on top of platform.
     -->
     <body name="pallet" pos="0.65 0 0">
       <geom name="bottom_deck" type="box" size="0.15 0.11 0.005"
-            pos="0 0 0.005" material="pallet_mat" mass="0.5"
-            contype="0" conaffinity="0"/>
+            pos="0 0 0.005" material="pallet_mat" mass="0.0"/>
       <geom name="leg_left_outer" type="box" size="0.15 0.015 0.0125"
-            pos="0 0.080 0.0225" material="pallet_mat" mass="0.1"/>
+            pos="0 0.080 0.0225" material="pallet_mat" mass="0.0"/>
       <geom name="leg_inner" type="box" size="0.15 0.015 0.0125"
-            pos="0 0.0 0.0225" material="pallet_mat" mass="0.1"/>
+            pos="0 0.0 0.0225" material="pallet_mat" mass="0.0"/>
       <geom name="leg_right_outer" type="box" size="0.15 0.015 0.0125"
-            pos="0 -0.080 0.0225" material="pallet_mat" mass="0.1"/>
+            pos="0 -0.080 0.0225" material="pallet_mat" mass="0.0"/>
       <geom name="top_deck" type="box" size="0.15 0.11 0.0075"
-            pos="0 0 0.0425" material="pallet_mat" mass="0.5"/>
+            pos="0 0 0.0425" material="pallet_mat" mass="0.0"/>
       <site name="left_slot_entry"  pos="-0.15  0.040 0.0225" size="0.008" rgba="0 1 0 0.8"/>
       <site name="right_slot_entry" pos="-0.15 -0.040 0.0225" size="0.008" rgba="0 1 0 0.8"/>
       <site name="slot_center"      pos="-0.15  0.000 0.0225" size="0.010" rgba="0 0 1 0.8"/>
-      <site name="slot_center_exit" pos="0.15 0.000 0.0225" size="0.010" rgba="1 0 1 0.8"/>
+      <site name="slot_center_exit" pos=" 0.15  0.000 0.0225" size="0.010" rgba="1 0 1 0.8"/>
     </body>
 
   </worldbody>
@@ -122,8 +138,8 @@
               kv="5.0" ctrlrange="-5.0 5.0"/>
     <velocity name="right_wheel_vel" joint="right_wheel_joint"
               kv="5.0" ctrlrange="-5.0 5.0"/>
-    <position name="fork_lift_vel" joint="fork_lift_joint"
-             kp="500.0" ctrlrange="0.0 0.20"/>
+    <position name="fork_lift_pos"   joint="fork_lift_joint"
+              kp="500.0" ctrlrange="0.0 0.20"/>
   </actuator>
 
   <sensor>
@@ -132,7 +148,7 @@
     <jointvel  name="left_wheel_vel_sensor"  joint="left_wheel_joint"/>
     <jointvel  name="right_wheel_vel_sensor" joint="right_wheel_joint"/>
     <jointpos  name="fork_height_sensor"     joint="fork_lift_joint"/>
-    <framepos  name="fork_tip_pos"  objtype="site" objname="fork_tip_site"/>
+    <framepos  name="fork_tip_pos"    objtype="site" objname="fork_tip_site"/>
     <framepos  name="slot_center_pos" objtype="site" objname="slot_center"/>
   </sensor>
 

@@ -1,37 +1,53 @@
 """
-ForkliftMujocoEnv - Phase 2c: Fork Insertion (Randomized Position)
-==================================================================
+ForkliftMujocoEnv - Phase 2d: Fork Height Control
+==================================================
 Task: Forklift starts at a randomized position in front of the pallet.
-      Agent learns to align and insert the forks into the pallet slot.
+      Pallet height is also randomized. Agent must control fork height
+      to align with the slot before insertion.
 
-Randomization (Phase 2c):
+Randomization (Phase 2d):
   - X distance to pallet: 0.20 ~ 0.50m
   - Yaw offset:           ±30°
-  - Y offset:             ±15cm
-  - Fork height:          fixed at FORK_INIT_HEIGHT (slot-aligned)
+  - Y offset:             ±2cm
+  - Pallet height (Z):    0.00 ~ 0.09m  (slot Z = pallet_z + 0.0225)
 
-Observation space (7 dims):
+Changes from Phase 2c:
+  - scene.xml: platform body added under pallet (static, no joint).
+      Platform height randomized via model.geom_size / model.body_pos in reset().
+      Platform front face blocks fork if height is wrong — no free sliding under pallet.
+  - action[2] now controls fork height: ctrl[2] = (action[2]+1)/2 * 0.20
+    (was: ctrl[2] = FORK_INIT_HEIGHT fixed)
+  - reset(): platform height randomized; fork initial height set to match slot
+    so the agent starts with a solvable configuration
+  - Observation: dz (obs[2]) is now meaningful — fork_tip Z vs slot Z
+  - Height penalty retained; now guides the agent to adjust fork height
+
+Observation space (8 dims):
   [0]  dx:           fork_tip → slot_center, X direction
   [1]  dy:           fork_tip → slot_center, Y direction
-  [2]  dz:           fork_tip → slot_center, Z direction
+  [2]  dz:           fork_tip → slot_center, Z direction  ← key signal in 2d
   [3]  yaw:          forklift heading angle (radians)
   [4]  fork_height:  fork lift joint position (m)
   [5]  lw_vel:       left wheel angular velocity (normalized)
   [6]  rw_vel:       right wheel angular velocity (normalized)
+  [7]  root_dy:      fork_root → slot_entry, Y direction
 
 Action space (3 dims, continuous [-1, 1]):
   [0]  left_wheel_vel  → scaled to ±5.0 rad/s
   [1]  right_wheel_vel → scaled to ±5.0 rad/s
-  [2]  fork_lift_vel   → scaled to ±0.3 m/s
+  [2]  fork_height_cmd → joint目標位置 [0, 0.20m] に直接マッピング
+                         action=-1→0.00m、action=0→0.10m、action=+1→0.20m
+                         position アクチュエータ(kp=500)が重力に関係なくキープ
 
 Reward:
   - Time penalty:       -0.1 per step
-  - Alignment reward:   improvement in fork-slot alignment × 50
-  - Lateral reward:     Y-distance reduction × 50
-  - Insertion reward:   tip/root distance reduction × 50 (gated by alignment)
+  - Root Y alignment:   improvement × 100
+  - Forward progress:   improvement × 10
+  - Insertion depth:    improvement × 200
+  - Height penalty:     z_error × 50 (fork_tip vs slot_center Z)
   - Collision penalty:  -1.0 per step when fork contacts pallet
-  - Success bonus:      +1000 (fork fully inserted)
-  - Fall penalty:       -50 (base_z too low)
+  - Success bonus:      +1000 (fork fully inserted, Z also aligned)
+  - Fall penalty:       -100 (base_z too low)
 """
 
 import numpy as np
@@ -43,35 +59,56 @@ from pathlib import Path
 
 # ── Simulation constants ────────────────────────────────────
 
-SCENE_XML        = Path(__file__).parent.parent / "sim" / "worlds" / "scene.xml"
-TIMESTEP         = 0.002   # matches scene.xml
-STEPS_PER_ACTION = 10      # control frequency = 50Hz
+SCENE_XML         = Path(__file__).parent.parent / "sim" / "worlds" / "scene.xml"
+TIMESTEP          = 0.002   # matches scene.xml
+STEPS_PER_ACTION  = 10      # control frequency = 50Hz
 MAX_EPISODE_STEPS = 500
 
-WHEEL_VEL_MAX = 5.0        # rad/s
-FORK_VEL_MAX  = 0.3        # m/s
-MIN_BASE_Z    = 0.05       # below this = fallen
+WHEEL_VEL_MAX = 5.0   # rad/s
+FORK_POS_MAX  = 0.20  # m (fork_lift_joint upper limit)
+MIN_BASE_Z    = 0.05  # below this = fallen
 
 
 # ── Forklift geometry ───────────────────────────────────────
 
-FORKLIFT_START_Z   = 0.13   # base_link height
-FORK_INIT_HEIGHT   = 0.0095  # fork joint position (aligned to slot)
-FORK_TIP_OFFSET_X  = 0.50   # fork tip to base_link (measured)
-PALLET_FRONT_X     = 0.40   # world X of pallet slot entry face
-FORK_LENGTH        = 0.32   # m
+FORKLIFT_START_Z  = 0.13    # base_link height (world Z)
+FORK_TIP_OFFSET_X = 0.50    # fork tip to base_link (measured)
+PALLET_FRONT_X    = 0.40    # world X of pallet slot entry face
+
+# fork_tip Z (world) = FORKLIFT_START_Z - 0.117 + fork_lift_joint_pos
+#                    = 0.013 + fork_lift_joint_pos
+FORK_TIP_Z_BASE   = FORKLIFT_START_Z - 0.117   # = 0.013
+
+# slot_center Z (world) = pallet_body_z + 0.0225
+SLOT_Z_OFFSET     = 0.0225  # slot height above pallet body origin
 
 
-# ── Randomization ranges ────────────────────────────────────
+# ── Platform height randomization ───────────────────────────
 
-RAND_DIST_MIN = 0.20   # m (distance from pallet front to fork tip)
-RAND_DIST_MAX = 0.50   # m
-RAND_YAW_MAX  = np.pi / 6   # ±30°
-RAND_Y_MAX    = 0.02   # m (±15cm)
+PLATFORM_X_FIXED   = 0.65   # world X (fixed)
+PLATFORM_Y_FIXED   = 0.0    # world Y (fixed)
+PLATFORM_HEIGHT_MIN = 0.00  # m (platform top face Z = platform height)
+PLATFORM_HEIGHT_MAX = 0.09  # m
+# → slot Z range: 0.0225 ~ 0.1125
+# → required fork_lift_joint range: 0.0095 ~ 0.0995  (well within 0~0.20)
+
+
+# ── Forklift start randomization ────────────────────────────
+
+RAND_DIST_MIN    = 0.20        # m (distance from pallet front to fork tip)
+RAND_DIST_MAX    = 0.50        # m
+RAND_YAW_MAX     = np.pi / 6  # ±30°
+RAND_Y_MAX       = 0.02       # m (±2cm)
+RAND_FORK_POS_MIN = 0.00      # m (fork_lift_joint lower limit)
+RAND_FORK_POS_MAX = 0.20      # m (fork_lift_joint upper limit)
 
 
 class ForkliftMujocoEnv(gym.Env):
-    """MuJoCo Gymnasium environment for forklift pallet insertion (Phase 2c)."""
+    """MuJoCo Gymnasium environment for forklift pallet insertion (Phase 2d).
+
+    Key change from Phase 2c: pallet height is randomized each episode,
+    and the agent must control fork height via action[2] to align with the slot.
+    """
 
     metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 50}
 
@@ -84,13 +121,17 @@ class ForkliftMujocoEnv(gym.Env):
         self.data  = mujoco.MjData(self.model)
         self._cache_ids()
 
+        # dz (obs[2]) range expanded: pallet can be 0~9cm high, fork 0~20cm
         obs_low  = np.array([-2.0, -2.0, -0.5, -np.pi, 0.0, -1.0, -1.0, -2.0], dtype=np.float32)
         obs_high = np.array([ 2.0,  2.0,  0.5,  np.pi, 0.25, 1.0,  1.0,  2.0], dtype=np.float32)
         self.observation_space = spaces.Box(low=obs_low, high=obs_high, dtype=np.float32)
+
+        # action[2] added: fork height command (position target)
         self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(3,), dtype=np.float32)
 
-        self._renderer = None
-        self._step_count = 0
+        self._renderer      = None
+        self._step_count    = 0
+        self._platform_height = 0.0   # current episode platform height (for logging)
 
     # ── ID cache ────────────────────────────────────────────
 
@@ -100,18 +141,23 @@ class ForkliftMujocoEnv(gym.Env):
         def joint_id(n): return mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_JOINT, n)
         def geom_id(n):  return mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM,  n)
 
-        self._base_body_id     = body_id("base_link")
-        self._fork_tip_site_id = site_id("fork_tip_site")
-        self._fork_root_site_id = site_id("fork_root_site")
+        self._base_body_id       = body_id("base_link")
+        self._fork_tip_site_id   = site_id("fork_tip_site")
+        self._fork_root_site_id  = site_id("fork_root_site")
         self._slot_entry_site_id = site_id("slot_center")
         self._slot_exit_site_id  = site_id("slot_center_exit")
 
-        self._root_qposadr = self.model.jnt_qposadr[joint_id("root")]
-        self._fork_qposadr = self.model.jnt_qposadr[joint_id("fork_lift_joint")]
+        self._root_qposadr     = self.model.jnt_qposadr[joint_id("root")]
+        self._fork_qposadr     = self.model.jnt_qposadr[joint_id("fork_lift_joint")]
+
+        # Platform height randomization: rewrite model directly in reset()
+        self._platform_geom_id = geom_id("platform_geom")
+        self._pallet_body_id   = body_id("pallet")
 
         self._pallet_geom_ids = {
             geom_id(n) for n in
-            ["bottom_deck", "leg_left_outer", "leg_inner", "leg_right_outer", "top_deck"]
+            ["platform_geom",
+             "bottom_deck", "leg_left_outer", "leg_inner", "leg_right_outer", "top_deck"]
         }
         self._fork_geom_ids = {geom_id(n) for n in ["left_fork_geom", "right_fork_geom"]}
 
@@ -121,7 +167,24 @@ class ForkliftMujocoEnv(gym.Env):
         super().reset(seed=seed)
         mujoco.mj_resetData(self.model, self.data)
 
-        # Randomize start pose
+        # ── Randomize platform height (Phase 2d new) ──
+        platform_height = self.np_random.uniform(PLATFORM_HEIGHT_MIN, PLATFORM_HEIGHT_MAX)
+        self._platform_height = platform_height
+
+        # model.geom_size[id] = [half_x, half_y, half_z]
+        # platform box の half_z を platform_height/2 に設定
+        self.model.geom_size[self._platform_geom_id][2] = platform_height / 2.0
+
+        # platform geom の中心Z = half_z → top face Z = platform_height
+        # geom pos は body frame 内の offset なので body_pos は変えず、
+        # geom_pos[2] を half_z に合わせる
+        self.model.geom_pos[self._platform_geom_id][2] = platform_height / 2.0
+
+        # pallet body is now a sibling of platform (not a child).
+        # body_pos[2] is world Z, so set it directly to platform_height.
+        self.model.body_pos[self._pallet_body_id][2] = platform_height
+
+        # ── Randomize forklift start pose ──
         distance = self.np_random.uniform(RAND_DIST_MIN, RAND_DIST_MAX)
         start_x  = PALLET_FRONT_X - distance - FORK_TIP_OFFSET_X
         start_y  = self.np_random.uniform(-RAND_Y_MAX, RAND_Y_MAX)
@@ -137,32 +200,43 @@ class ForkliftMujocoEnv(gym.Env):
         self.data.qpos[q + 5] = 0.0
         self.data.qpos[q + 6] = qz
 
-        self.data.qpos[self._fork_qposadr] = FORK_INIT_HEIGHT
+        # ── Fork initial height: randomized (Phase 2d) ──
+        init_fork_pos = self.np_random.uniform(RAND_FORK_POS_MIN, RAND_FORK_POS_MAX)
+        self.data.qpos[self._fork_qposadr] = init_fork_pos
+
         self.data.qvel[:] = 0.0
         self.data.ctrl[:] = 0.0
         mujoco.mj_forward(self.model, self.data)
 
-        # Initialize previous-state variables for incremental rewards
+        # ── Initialize incremental reward state ──
         fork_tip   = self.data.site_xpos[self._fork_tip_site_id].copy()
         fork_root  = self.data.site_xpos[self._fork_root_site_id].copy()
         slot_entry = self.data.site_xpos[self._slot_entry_site_id].copy()
         slot_exit  = self.data.site_xpos[self._slot_exit_site_id].copy()
 
-        self._prev_alignment_error  = self._calc_alignment_error(
+        self._prev_alignment_error = self._calc_alignment_error(
             fork_tip, fork_root, slot_entry, slot_exit
         )
-        self._prev_root_dy          = abs(fork_root[1] - slot_entry[1])
-        self._prev_fork_tip_x       = fork_tip[0]
-        self._prev_insertion_depth  = max(0.0, fork_tip[0] - slot_entry[0])
-        self._step_count = 0
+        self._prev_root_dy         = abs(fork_root[1] - slot_entry[1])
+        self._prev_fork_tip_x      = fork_tip[0]
+        self._prev_insertion_depth = max(0.0, fork_tip[0] - slot_entry[0])
+        self._prev_z_error         = abs(fork_tip[2] - slot_entry[2])
+        self._step_count           = 0
+
         return self._get_obs(), {}
 
     # ── Step ────────────────────────────────────────────────
 
     def step(self, action):
+        # Wheel velocity (same as Phase 2c)
         self.data.ctrl[0] = float(action[0]) * WHEEL_VEL_MAX
         self.data.ctrl[1] = float(action[1]) * WHEEL_VEL_MAX
-        self.data.ctrl[2] = FORK_INIT_HEIGHT
+
+        # Fork height: action[2] in [-1, 1] → joint目標位置 [0, 0.20m] に直接マッピング
+        # action=-1 → 0.00m（最下点）、action=0 → 0.10m（中間）、action=+1 → 0.20m（最上点）
+        # position アクチュエータ(kp=500)が重力に関係なくその位置をキープする。
+        fork_target = (float(action[2]) + 1.0) / 2.0 * FORK_POS_MAX
+        self.data.ctrl[2] = fork_target
 
         for _ in range(STEPS_PER_ACTION):
             mujoco.mj_step(self.model, self.data)
@@ -180,13 +254,13 @@ class ForkliftMujocoEnv(gym.Env):
     # ── Observation ─────────────────────────────────────────
 
     def _get_obs(self):
-        fork_tip = self.data.site_xpos[self._fork_tip_site_id]
-        slot_ctr = self.data.site_xpos[self._slot_entry_site_id]
-        delta    = slot_ctr - fork_tip
-
-        fork_root  = self.data.site_xpos[self._fork_root_site_id]
+        fork_tip   = self.data.site_xpos[self._fork_tip_site_id]
         slot_entry = self.data.site_xpos[self._slot_entry_site_id]
-        root_dy    = slot_entry[1] - fork_root[1]
+        fork_root  = self.data.site_xpos[self._fork_root_site_id]
+
+        # dx, dy, dz: fork_tip → slot_center (signed)
+        delta  = slot_entry - fork_tip
+        root_dy = slot_entry[1] - fork_root[1]
 
         q   = self._root_qposadr
         qw  = self.data.qpos[q + 3]
@@ -213,7 +287,7 @@ class ForkliftMujocoEnv(gym.Env):
         return err
 
     def _compute_reward(self):
-        info = {}
+        info      = {}
         terminated = False
 
         fork_tip   = self.data.site_xpos[self._fork_tip_site_id].copy()
@@ -227,31 +301,30 @@ class ForkliftMujocoEnv(gym.Env):
 
         reward = -0.1  # time penalty
 
-        # 1. Root Y alignment (main task)
+        # 1. Root Y alignment
         reward += (self._prev_root_dy - root_dy) * 100.0
         self._prev_root_dy = root_dy
 
-        # 2. Alignment improvement
-        # reward += (self._prev_alignment_error - alignment_error) * 50.0
-        # self._prev_alignment_error = alignment_error
+        # 2. Forward progress (small: encourages moving toward pallet)
+        # forward_progress = fork_tip[0] - self._prev_fork_tip_x
+        # reward += forward_progress * 50.0
+        # self._prev_fork_tip_x = fork_tip[0]
 
-        # 3a. Forward progress (small: encourages moving toward pallet)
+        # 3. Insertion depth (large: reward for actually entering slot)
+        y_in_slot = abs(fork_tip[1] - slot_entry[1]) < 0.03  # slot Y within ±3cm of slot center
+        y_root_in_slot = root_dy < 0.03  # root Y also within ±3cm (encourage whole forklift alignment)
+        z_in_slot = abs(fork_tip[2] - slot_entry[2]) < 0.010  # fork_tip Z within ±1cm of slot Z (height alignment)
+        gate = y_in_slot and z_in_slot and y_root_in_slot  # all conditions to count insertion depth
         forward_progress = fork_tip[0] - self._prev_fork_tip_x
-        reward += forward_progress * 10.0
+        forward_scale    = 200.0 if gate else 50.0
+        reward += forward_progress * forward_scale
         self._prev_fork_tip_x = fork_tip[0]
 
-        # 3b. Insertion depth (large: reward for actually entering slot)
-        insertion_improvement = insertion_depth - self._prev_insertion_depth
-        reward += insertion_improvement * 200.0
-        self._prev_insertion_depth = insertion_depth
+        # 4. Height alignment (incremental, same design as root_dy)
+        z_error = abs(fork_tip[2] - slot_entry[2])
+        reward -= z_error * 100.0  # direct penalty on Z error to encourage height adjustment
 
-        # Height penalty (encourage keeping forks low during insertion)
-        fork_tip_z = fork_tip[2]
-        slot_z     = slot_entry[2]
-        z_error    = abs(fork_tip_z - slot_z)
-        reward -= z_error * 50.0  # Height penalty (encourage keeping forks low during insertion)
-
-        # 4. Collision penalty
+        # 5. Collision penalty
         for i in range(self.data.ncon):
             c = self.data.contact[i]
             if (c.geom1 in self._pallet_geom_ids or c.geom2 in self._pallet_geom_ids):
@@ -259,18 +332,19 @@ class ForkliftMujocoEnv(gym.Env):
                     reward -= 1.0
                     break
 
-        # 5. Success
-        tip_past_exit   = fork_tip[0] >= slot_exit[0] and abs(fork_tip[1] - slot_exit[1]) < 0.03
-        root_near_entry = abs(fork_root[1] - slot_entry[1]) < 0.03
-        if tip_past_exit and root_near_entry:
-            reward += 1000.0
+        # 6. Success condition: XY insertion + root alignment + Z alignment
+        tip_past_exit   = fork_tip[0] >= slot_exit[0] and abs(fork_tip[1] - slot_exit[1]) < 0.01
+        root_near_entry = abs(fork_root[1] - slot_entry[1]) < 0.01
+        z_aligned       = abs(fork_tip[2] - slot_entry[2]) < 0.01  # スロット高さ±1cm以内
+        if tip_past_exit and root_near_entry and z_aligned:
+            reward    += 1000.0
             terminated = True
             info["success"] = True
 
-        # 6. Fall
+        # 7. Fall
         base_z = self.data.xpos[self._base_body_id][2]
         if base_z < MIN_BASE_Z:
-            reward -= 100.0
+            reward    -= 100.0
             terminated = True
             info["fallen"] = True
         else:
@@ -281,10 +355,15 @@ class ForkliftMujocoEnv(gym.Env):
             "root_dy":          float(root_dy),
             "insertion_depth":  float(insertion_depth),
             "fork_tip_x":       float(fork_tip[0]),
+            "fork_tip_z":       float(fork_tip[2]),
+            "slot_z":           float(slot_entry[2]),
+            "z_error":          float(z_error),
+            "platform_height":  float(self._platform_height),
             "base_z":           float(base_z),
         })
 
         return reward, terminated, info
+
     # ── Render / Close ──────────────────────────────────────
 
     def render(self):
@@ -303,22 +382,31 @@ class ForkliftMujocoEnv(gym.Env):
 # ── Sanity check ─────────────────────────────────────────
 
 if __name__ == "__main__":
-    print("=== ForkliftMujocoEnv sanity check ===")
+    print("=== ForkliftMujocoEnv Phase 2d sanity check ===")
 
     env = ForkliftMujocoEnv()
     print(f"Observation space: {env.observation_space}")
     print(f"Action space     : {env.action_space}")
 
+    # Run 3 episodes to verify platform height randomization
+    for ep in range(3):
+        obs, _ = env.reset()
+        fork_tip  = env.data.site_xpos[env._fork_tip_site_id]
+        slot_ctr  = env.data.site_xpos[env._slot_entry_site_id]
+        fork_h    = env.data.qpos[env._fork_qposadr]
+
+        print(f"\n--- Episode {ep+1} ---")
+        print(f"  platform_height : {env._platform_height:.4f} m")
+        print(f"  slot_z          : {slot_ctr[2]:.4f} m  (expected: {env._platform_height + 0.0225:.4f})")
+        print(f"  fork_tip_z      : {fork_tip[2]:.4f} m")
+        print(f"  fork_height     : {fork_h:.4f} m")
+        print(f"  z_error         : {abs(fork_tip[2] - slot_ctr[2]):.6f} m  (should be ~0)")
+
+        for label, val in zip(["dx","dy","dz","yaw","fork_h","lw_vel","rw_vel","root_dy"], obs):
+            print(f"  {label:8s}: {val:+.4f}")
+
+    # Random rollout
     obs, _ = env.reset()
-    fork_tip = env.data.site_xpos[env._fork_tip_site_id]
-    base_x   = env.data.qpos[env._root_qposadr]
-    print(f"offset check: fork_tip_x - base_x = {fork_tip[0] - base_x:.4f} m")
-    print(f"fork_tip_x = {fork_tip[0]:.4f} m")
-
-    print(f"\nInitial observation:")
-    for label, val in zip(["dx","dy","dz","yaw","fork_h","lw_vel","rw_vel", "root_dy"], obs):
-        print(f"  {label:8s}: {val:+.4f}")
-
     total_reward = 0.0
     for step in range(200):
         action = env.action_space.sample()
@@ -326,13 +414,13 @@ if __name__ == "__main__":
         total_reward += reward
         if terminated or truncated:
             print(f"\nEpisode ended at step {step+1}")
+            print(f"  success: {info.get('success', False)}")
             break
 
-    print(f"\nTotal reward (200 random steps): {total_reward:.2f}")
-    print(f"Final alignment_err: {info['alignment_error']:.4f} rad")
-    print(f"Final insertion    : {info['insertion_depth']:.4f} m")
-    print(f"Final fork_tip_x   : {info['fork_tip_x']:.4f} m")
-    print(f"Final base_z       : {info['base_z']:.4f} m")
+    print(f"\nTotal reward (random 200 steps): {total_reward:.2f}")
+    print(f"Final z_error        : {info['z_error']:.4f} m")
+    print(f"Final insertion      : {info['insertion_depth']:.4f} m")
+    print(f"Final platform_height: {info['platform_height']:.4f} m")
 
     env.close()
     print("\nSanity check PASSED")

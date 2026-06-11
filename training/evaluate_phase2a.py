@@ -36,7 +36,7 @@ from forklift_mujoco_env import ForkliftMujocoEnv, STEPS_PER_ACTION
 
 # ── Defaults ────────────────────────────────────────────────
 
-DEFAULT_MODEL = Path(__file__).parent / "models" / "phase2c_ppo" / "best_model.zip"
+DEFAULT_MODEL = Path(__file__).parent / "models" / "phase2d_ppo" / "best_model.zip"
 DEFAULT_N_EPISODES = 10
 DEFAULT_REALTIME   = True
 

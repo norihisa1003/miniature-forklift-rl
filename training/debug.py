@@ -25,7 +25,7 @@ from stable_baselines3 import PPO
 from forklift_mujoco_env import ForkliftMujocoEnv
 
 
-DEFAULT_MODEL    = Path(__file__).parent / "models" / "phase2c_ppo" / "best_model.zip"
+DEFAULT_MODEL    = Path(__file__).parent / "models" / "phase2d_ppo" / "best_model.zip"
 DEFAULT_EPISODES = 5
 LOG_INTERVAL     = 100  # print every N steps
 
